@@ -16,7 +16,10 @@ import paymentRoutes from './routes/payment.js';
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: ['https://app.nodevbuild.com', 'http://localhost:3000'],
+    credentials: true
+}));
 app.use(express.json());
 
 // Routes
