@@ -6,7 +6,7 @@ import './config/firebase.js';
 dotenv.config();
 
 // Routes
-import authRoutes from './routes/auth.js';
+import authRoutes from './routes/userLogin.js';
 import collaborationRoutes from './routes/collaboration.js';
 import contactRoutes from './routes/contact.js';
 import courseRoutes from './routes/courses.js';
