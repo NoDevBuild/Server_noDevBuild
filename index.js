@@ -17,7 +17,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-    origin: ['https://nodevbuild.com', 'http://localhost:3000', 'https://zp1v56uxy8rdx5ypatb0ockcb9tr6a-oci3--3000--59dccbc6.local-credentialless.webcontainer-api.io/'],
+    origin: '*',
     credentials: true
 }));
 app.use(express.json());
