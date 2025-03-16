@@ -1,8 +1,8 @@
 import { auth } from '../config/firebase.js';
-import jwt from 'jsonwebtoken';
+import { jwtVerify } from 'jose';
 
 // Secret key for signing the JWT
-const JWT_SECRET = 'no_dev_build'; // Ensure this matches the secret used in userLogin.js
+const JWT_SECRET = new TextEncoder().encode('no_dev_build'); // Ensure this matches the secret used in userLogin.js
 
 export const authenticateToken = async (req, res, next) => {
   try {
@@ -31,8 +31,8 @@ export const authenticateToken = async (req, res, next) => {
       console.error('Firebase token verification error:', verifyError);
       // If Firebase verification fails, try to verify it as a JWT
       try {
-        const decodedJWT = jwt.verify(token, JWT_SECRET);
-        req.user = decodedJWT;
+        const { payload } = await jwtVerify(token, JWT_SECRET);
+        req.user = payload;
         return next();
       } catch (jwtError) {
         console.error('JWT verification error:', jwtError);

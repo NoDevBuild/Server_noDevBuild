@@ -1,7 +1,7 @@
 import express from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import jwt from 'jsonwebtoken';
+import { SignJWT } from 'jose';
 import { promisify } from 'util';
 import validator from 'email-validator';
 import dns from 'dns';
@@ -13,7 +13,7 @@ const db = getFirestore();
 const resolveMx = promisify(dns.resolveMx);
 
 // Secret key for signing the JWT
-const JWT_SECRET = 'no_dev_build'; // Replace with your secret key
+const JWT_SECRET = new TextEncoder().encode('no_dev_build'); // Ensure this matches the secret used in auth.js
 const JWT_EXPIRATION = '1d'; // Set the desired expiration time (e.g., '1h', '2d', etc.)
 
 // Helper function to validate email domain
@@ -45,8 +45,13 @@ router.post('/login', async (req, res) => {
       // Create a custom token for the user
       const customToken = await auth.createCustomToken(userRecord.uid);
       
-      // Create a JWT with a custom expiration date
-      const jwtToken = jwt.sign({ uid: userRecord.uid }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+      // Create a JWT with a custom expiration date using jose
+      const jwtToken = await new SignJWT({ uid: userRecord.uid })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime(JWT_EXPIRATION)
+        .sign(JWT_SECRET); // Use the secret from the auth.js
+
       console.log(jwtToken);
       // Get additional user data from Firestore if needed
       const userDoc = await db.collection('users').doc(userRecord.uid).get();
