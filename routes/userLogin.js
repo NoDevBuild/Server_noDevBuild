@@ -1,15 +1,20 @@
 import express from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import dns from 'dns';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import jwt from 'jsonwebtoken';
 import { promisify } from 'util';
 import validator from 'email-validator';
+import dns from 'dns';
 
 const router = express.Router();
 const auth = getAuth();
 const db = getFirestore();
 
 const resolveMx = promisify(dns.resolveMx);
+
+// Secret key for signing the JWT
+const JWT_SECRET = 'no_dev_build'; // Replace with your secret key
+const JWT_EXPIRATION = '1d'; // Set the desired expiration time (e.g., '1h', '2d', etc.)
 
 // Helper function to validate email domain
 async function isEmailDomainValid(email) {
@@ -40,12 +45,15 @@ router.post('/login', async (req, res) => {
       // Create a custom token for the user
       const customToken = await auth.createCustomToken(userRecord.uid);
       
+      // Create a JWT with a custom expiration date
+      const jwtToken = jwt.sign({ uid: userRecord.uid }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+      console.log(jwtToken);
       // Get additional user data from Firestore if needed
       const userDoc = await db.collection('users').doc(userRecord.uid).get();
       const userData = userDoc.data();
 
       res.status(200).json({
-        token: customToken,
+        token: jwtToken,
         user: {
           ...userRecord,
           ...userData
@@ -123,8 +131,8 @@ router.post('/signup', async (req, res) => {
     await db.collection('users').doc(userRecord.uid).set({
       email,
       displayName,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
       emailVerified: false
     });
 
@@ -148,18 +156,25 @@ router.put('/users/:uid', async (req, res) => {
   try {
     const { uid } = req.params;
     const { displayName, photoURL } = req.body;
-    
+
+    // Create an object to hold the fields to update
+    const updateData = {};
+
+    // Only add fields that are defined
+    if (displayName) {
+      updateData.displayName = displayName;
+    }
+    if (photoURL) {
+      updateData.photoURL = photoURL;
+    }
+
     // Update user in Firebase Auth
-    const userRecord = await auth.updateUser(uid, {
-      displayName,
-      photoURL,
-    });
+    const userRecord = await auth.updateUser(uid, updateData);
 
     // Update user document in Firestore
     await db.collection('users').doc(uid).update({
-      displayName,
-      photoURL,
-      updatedAt: new Date().toISOString()
+      ...updateData,
+      updatedAt: new Date().toISOString() // Update the timestamp
     });
 
     res.json(userRecord);

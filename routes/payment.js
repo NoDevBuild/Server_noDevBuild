@@ -32,7 +32,7 @@ router.get('/history', authenticateToken, async (req, res) => {
 router.post('/orders', authenticateToken, async (req, res) => {
   try {
     const { planType } = req.body;
-    const amount = planType === 'annual' ? 180000 : 500000;
+    const amount = planType === 'annual' ? 180 : 500;
 
     // Create internal order
     const orderRef = await db.collection('orders').add({
@@ -87,17 +87,65 @@ router.post('/orders', authenticateToken, async (req, res) => {
 });
 
 // Update order status
-router.put('/orders/:orderId', authenticateToken, async (req, res) => {
+router.put('/orders/:razorpayOrderId', authenticateToken, async (req, res) => {
   try {
-    const { orderId } = req.params;
+    const { razorpayOrderId } = req.params; // Change to razorpayOrderId
+    console.log('Attempting to update order with Razorpay ID:', razorpayOrderId); // Log the Razorpay order ID
     const { paymentId, status, signature } = req.body;
 
-    await db.collection('orders').doc(orderId).update({
+    // Reference to the order document using razorpayOrderId
+    const orderQuery = db.collection('orders').where('razorpayOrderId', '==', razorpayOrderId);
+    const orderSnapshot = await orderQuery.get();
+
+    // Log the order document retrieval
+    console.log('Order document retrieved:', !orderSnapshot.empty); // Log if the document exists
+
+    // Check if the document exists
+    if (orderSnapshot.empty) {
+      console.error('Order document not found:', razorpayOrderId); // Log the error
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const orderDoc = orderSnapshot.docs[0]; // Get the first document
+    const orderData = orderDoc.data(); // Get the order data
+
+    // Create an object to hold the fields to update
+    const updateData = {
       paymentId,
       status,
       signature,
-      updatedAt: new Date().toISOString()
-    });
+      updatedAt: new Date().toISOString() // Update the timestamp
+    };
+
+    // Only add signature if it is defined
+    if (signature) {
+      updateData.signature = signature;
+    }
+
+    // Update the order in Firestore
+    await orderDoc.ref.update(updateData);
+
+    // Get the user ID from the token
+    const userId = req.user.uid;
+
+    // Update user membership data based on payment status
+    if (status === 'completed') {
+      const membershipRef = db.collection('users').doc(userId);
+      const membershipData = {
+        lastPaymentDate: new Date().toISOString(), // Date of the last payment
+        subscriptionStartDate: new Date().toISOString(), // Subscription starts when payment is made
+        planType: orderData.planType, // Plan type from the order
+        amountPaid: orderData.amount, // Amount paid from the order
+        currency: orderData.currency, // Currency from the order
+        razorpayOrderId: orderData.razorpayOrderId, // Razorpay order ID
+        signature: orderData.signature, // Signature from the order
+        membershipStatus: 'active', // Set membership status to active
+        userId: userId, // User ID
+        createdAt: orderData.createdAt, // Created date from the order
+      };
+
+      await membershipRef.update(membershipData);
+    }
 
     res.json({ message: 'Order updated successfully' });
   } catch (error) {
