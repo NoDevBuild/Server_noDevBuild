@@ -4,9 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "build": "npm install && npm run compile",
-    "dev": "nodemon index.js",
-    "compile": "tsc"
+    "build": "npm install",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
