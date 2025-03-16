@@ -8,7 +8,6 @@
     "dev": "nodemon index.js"
   },
   "dependencies": {
-    "@hapi/hawk": "^8.0.0",
     "cors": "^2.8.5",
     "dns": "^0.2.2",
     "dotenv": "^16.4.5",

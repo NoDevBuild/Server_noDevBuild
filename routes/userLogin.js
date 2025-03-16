@@ -161,11 +161,16 @@ router.put('/users/:uid', async (req, res) => {
     const updateData = {};
 
     // Only add fields that are defined
-    if (displayName) {
+    if (displayName !== undefined) {
       updateData.displayName = displayName;
     }
-    if (photoURL) {
+    if (photoURL !== undefined) {
       updateData.photoURL = photoURL;
+    }
+
+    // Check if there's anything to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
     }
 
     // Update user in Firebase Auth
