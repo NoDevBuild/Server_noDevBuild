@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import './config/firebase.js';
+import bodyParser from 'body-parser';
 
 dotenv.config();
 
@@ -15,12 +16,14 @@ import paymentRoutes from './routes/payment.js';
 
 const app = express();
 
+// Middleware to parse JSON bodies
+app.use(bodyParser.json());
+
 // Middleware
 app.use(cors({
     origin: '*',
     credentials: true
 }));
-app.use(express.json());
 
 // Routes
 app.use('/api/auth', authRoutes);

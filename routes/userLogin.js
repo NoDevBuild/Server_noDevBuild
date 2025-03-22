@@ -5,6 +5,7 @@ import { SignJWT } from 'jose';
 import { promisify } from 'util';
 import validator from 'email-validator';
 import dns from 'dns';
+import { jwtVerify } from 'jose';
 
 const router = express.Router();
 const auth = getAuth();
@@ -16,6 +17,31 @@ const resolveMx = promisify(dns.resolveMx);
 const JWT_SECRET = new TextEncoder().encode('no_dev_build'); // Ensure this matches the secret used in auth.js
 const JWT_EXPIRATION = '1d'; // Set the desired expiration time (e.g., '1h', '2d', etc.)
 
+// Add this middleware function at the top of the file after the constants
+const authenticateJWT = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const token = authHeader.split(' ')[1]; // Bearer <token>
+    if (!token) {
+      return res.status(401).json({ error: 'Invalid token format' });
+    }
+
+    // Verify the token using the same JWT_SECRET we use for creation
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    
+    // Add the user info to the request object
+    req.user = { uid: payload.uid };
+    next();
+  } catch (error) {
+    console.error('Token verification failed:', error);
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
 // Helper function to validate email domain
 async function isEmailDomainValid(email) {
   const domain = email.split('@')[1];
@@ -25,6 +51,15 @@ async function isEmailDomainValid(email) {
   } catch (error) {
     return false;
   }
+}
+
+// Helper function for creating JWT tokens
+async function generateJWTToken(uid) {
+  return await new SignJWT({ uid })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(JWT_EXPIRATION)
+    .sign(JWT_SECRET);
 }
 
 // Login route
@@ -46,11 +81,7 @@ router.post('/login', async (req, res) => {
       const customToken = await auth.createCustomToken(userRecord.uid);
       
       // Create a JWT with a custom expiration date using jose
-      const jwtToken = await new SignJWT({ uid: userRecord.uid })
-        .setProtectedHeader({ alg: 'HS256' })
-        .setIssuedAt()
-        .setExpirationTime(JWT_EXPIRATION)
-        .sign(JWT_SECRET); // Use the secret from the auth.js
+      const jwtToken = await generateJWTToken(userRecord.uid);
 
       console.log(jwtToken);
       // Get additional user data from Firestore if needed
@@ -141,11 +172,11 @@ router.post('/signup', async (req, res) => {
       emailVerified: false
     });
 
-    // Create a custom token for the user
-    const customToken = await auth.createCustomToken(userRecord.uid);
+    // Create a JWT token (same as login)
+    const jwtToken = await generateJWTToken(userRecord.uid);
 
     res.status(201).json({
-      token: customToken,
+      token: jwtToken,
       user: userRecord,
       message: 'Please check your email to verify your account'
     });
@@ -157,9 +188,18 @@ router.post('/signup', async (req, res) => {
 });
 
 // Update user profile
-router.put('/users/:uid', async (req, res) => {
+router.put('/users/:uid', authenticateJWT, async (req, res) => {
   try {
     const { uid } = req.params;
+    const authenticatedUserId = req.user.uid;
+
+    // Check if the authenticated user is trying to update their own profile
+    if (uid !== authenticatedUserId) {
+      return res.status(403).json({ 
+        error: 'Unauthorized: You can only update your own profile' 
+      });
+    }
+
     const { displayName, photoURL } = req.body;
 
     // Create an object to hold the fields to update
@@ -184,7 +224,7 @@ router.put('/users/:uid', async (req, res) => {
     // Update user document in Firestore
     await db.collection('users').doc(uid).update({
       ...updateData,
-      updatedAt: new Date().toISOString() // Update the timestamp
+      updatedAt: new Date().toISOString()
     });
 
     res.json(userRecord);

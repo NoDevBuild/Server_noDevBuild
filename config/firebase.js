@@ -19,6 +19,10 @@ const app = initializeApp({
 });
 
 const db = getFirestore(app);
+db.settings({
+  ignoreUndefinedProperties: true // Enable this option
+});
+
 const auth = getAuth(app);
 
 export { db, auth };
