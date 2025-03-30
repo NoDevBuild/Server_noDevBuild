@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import validator from 'email-validator';
 import dns from 'dns';
 import { jwtVerify } from 'jose';
+import { sendWelcomeEmail, sendLoginNotification } from '../services/emailAutomation.js';
 
 const router = express.Router();
 const auth = getAuth();
@@ -88,6 +89,9 @@ router.post('/login', async (req, res) => {
       const userDoc = await db.collection('users').doc(userRecord.uid).get();
       const userData = userDoc.data();
 
+      // Send login notification email \\\\\\\\
+      await sendLoginNotification(email, userRecord.displayName);
+
       res.status(200).json({
         token: jwtToken,
         user: {
@@ -159,9 +163,8 @@ router.post('/signup', async (req, res) => {
     // Send verification email
     const verificationLink = await auth.generateEmailVerificationLink(email);
     
-    // Here you should implement your email sending logic
-    // For example, using nodemailer or other email service
-    // await sendVerificationEmail(email, verificationLink);
+    // Send welcome email
+    await sendWelcomeEmail(email, displayName);
 
     // Create user document in Firestore
     await db.collection('users').doc(userRecord.uid).set({
