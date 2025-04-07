@@ -90,7 +90,7 @@ router.post('/login', async (req, res) => {
       const userData = userDoc.data();
 
       // Send login notification email \\\\\\\\
-      await sendLoginNotification(email, userRecord.displayName);
+      // await sendLoginNotification(email, userRecord.displayName);
 
       res.status(200).json({
         token: jwtToken,
@@ -153,36 +153,51 @@ router.post('/signup', async (req, res) => {
     }
 
     // Create user in Firebase Auth
-    const userRecord = await auth.createUser({
-      email,
-      password,
-      displayName,
-      emailVerified: false
-    });
+    try {
+      const userRecord = await auth.createUser({
+        email,
+        password,
+        displayName,
+        emailVerified: false
+      });
 
-    // Send verification email
-    const verificationLink = await auth.generateEmailVerificationLink(email);
-    
-    // Send welcome email
-    await sendWelcomeEmail(email, displayName);
+      // Send verification email
+      // const verificationLink = await auth.generateEmailVerificationLink(email);
+      
+      // Send welcome email
+      // await sendWelcomeEmail(email, displayName);
 
-    // Create user document in Firestore
-    await db.collection('users').doc(userRecord.uid).set({
-      email,
-      displayName,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-      emailVerified: false
-    });
+      // Create user document in Firestore
+      await db.collection('users').doc(userRecord.uid).set({
+        email,
+        displayName,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        emailVerified: false
+      });
 
-    // Create a JWT token (same as login)
-    const jwtToken = await generateJWTToken(userRecord.uid);
+      // Create a JWT token (same as login)
+      const jwtToken = await generateJWTToken(userRecord.uid);
 
-    res.status(201).json({
-      token: jwtToken,
-      user: userRecord,
-      message: 'Please check your email to verify your account'
-    });
+      res.status(201).json({
+        token: jwtToken,
+        user: userRecord,
+        message: 'Please check your email to verify your account'
+      });
+    } catch (firebaseError) {
+      console.error('Firebase Auth Error:', firebaseError);
+      
+      // Check for specific Firebase Admin authentication errors
+      if (firebaseError.code === 'auth/invalid-credential' || 
+          firebaseError.message.includes('Missing credentials')) {
+        return res.status(500).json({ 
+          error: 'Server authentication error. Please contact support.',
+          details: 'Firebase Admin authentication failed. Check server logs.'
+        });
+      }
+      
+      throw firebaseError;
+    }
 
   } catch (error) {
     console.error('Error creating user:', error);
