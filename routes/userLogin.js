@@ -7,6 +7,7 @@ import validator from 'email-validator';
 import dns from 'dns';
 import { jwtVerify } from 'jose';
 import { sendWelcomeEmail, sendLoginNotification } from '../services/emailAutomation.js';
+import { authenticateUser, createUser, updateUser, deleteUser, getUserProfile } from '../services/authService.js';
 
 const router = express.Router();
 const auth = getAuth();
@@ -74,36 +75,48 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Get user by email
     try {
-      const userRecord = await auth.getUserByEmail(email);
+      console.log(`Login attempt for email: ${email}`);
       
-      // Create a custom token for the user
-      const customToken = await auth.createCustomToken(userRecord.uid);
+      // Use our auth service to authenticate the user
+      const result = await authenticateUser(email, password);
       
-      // Create a JWT with a custom expiration date using jose
-      const jwtToken = await generateJWTToken(userRecord.uid);
+      console.log(`Login successful for user: ${email}`);
+      
+      // Send login notification email
+      // await sendLoginNotification(email, result.user.displayName);
 
-      console.log(jwtToken);
-      // Get additional user data from Firestore if needed
-      const userDoc = await db.collection('users').doc(userRecord.uid).get();
-      const userData = userDoc.data();
-
-      // Send login notification email \\\\\\\\
-      // await sendLoginNotification(email, userRecord.displayName);
-
-      res.status(200).json({
-        token: jwtToken,
-        user: {
-          ...userRecord,
-          ...userData
-        }
-      });
+      res.status(200).json(result);
     } catch (error) {
       console.error('Error in login:', error);
+      
+      // Handle specific Firebase Admin errors
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/email-not-found') {
+        return res.status(401).json({ 
+          error: 'Email not found',
+          code: 'auth/email-not-found'
+        });
+      } else if (error.code === 'auth/invalid-password') {
+        return res.status(401).json({ 
+          error: 'Invalid password',
+          code: 'auth/invalid-password'
+        });
+      } else if (error.code === 'auth/too-many-attempts') {
+        return res.status(429).json({ 
+          error: 'Too many login attempts. Please try again later.',
+          code: 'auth/too-many-attempts'
+        });
+      } else if (error.code === 'auth/unknown-error') {
+        return res.status(401).json({ 
+          error: 'Authentication failed',
+          details: error.message
+        });
+      }
+      
+      // For any other errors, return a generic error message
       res.status(401).json({ 
-        error: 'Invalid email or password',
-        details: error.message 
+        error: 'Authentication failed',
+        details: error.message || 'Unknown error occurred'
       });
     }
   } catch (error) {
@@ -152,36 +165,15 @@ router.post('/signup', async (req, res) => {
       }
     }
 
-    // Create user in Firebase Auth
+    // Create user using our auth service
     try {
-      const userRecord = await auth.createUser({
-        email,
-        password,
-        displayName,
-        emailVerified: false
-      });
-
-      // Send verification email
-      // const verificationLink = await auth.generateEmailVerificationLink(email);
+      const result = await createUser(email, password, displayName);
       
       // Send welcome email
       // await sendWelcomeEmail(email, displayName);
 
-      // Create user document in Firestore
-      await db.collection('users').doc(userRecord.uid).set({
-        email,
-        displayName,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        emailVerified: false
-      });
-
-      // Create a JWT token (same as login)
-      const jwtToken = await generateJWTToken(userRecord.uid);
-
       res.status(201).json({
-        token: jwtToken,
-        user: userRecord,
+        ...result,
         message: 'Please check your email to verify your account'
       });
     } catch (firebaseError) {
@@ -236,14 +228,8 @@ router.put('/users/:uid', authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: 'No fields to update' });
     }
 
-    // Update user in Firebase Auth
-    const userRecord = await auth.updateUser(uid, updateData);
-
-    // Update user document in Firestore
-    await db.collection('users').doc(uid).update({
-      ...updateData,
-      updatedAt: new Date().toISOString()
-    });
+    // Update user using our auth service
+    const userRecord = await updateUser(uid, updateData);
 
     res.json(userRecord);
   } catch (error) {
@@ -257,11 +243,8 @@ router.delete('/users/:uid', async (req, res) => {
   try {
     const { uid } = req.params;
     
-    // Delete user from Firebase Auth
-    await auth.deleteUser(uid);
-    
-    // Delete user document from Firestore
-    await db.collection('users').doc(uid).delete();
+    // Delete user using our auth service
+    await deleteUser(uid);
     
     res.status(204).send();
   } catch (error) {
@@ -275,18 +258,41 @@ router.get('/users/:uid', async (req, res) => {
   try {
     const { uid } = req.params;
     
+    // Get user profile using our auth service
+    const userProfile = await getUserProfile(uid);
+    
+    res.json(userProfile);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get dashboard data
+router.get('/dashboard/:userId', authenticateJWT, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const authenticatedUserId = req.user.uid;
+
+    // Check if the authenticated user is requesting their own dashboard
+    if (userId !== authenticatedUserId) {
+      return res.status(403).json({ 
+        error: 'Unauthorized: You can only access your own dashboard' 
+      });
+    }
+    
     // Get user from Firebase Auth
-    const userRecord = await auth.getUser(uid);
+    const userRecord = await auth.getUser(userId);
     
     // Get user document from Firestore
-    const userDoc = await db.collection('users').doc(uid).get();
+    const userDoc = await db.collection('users').doc(userId).get();
     
     res.json({
       ...userRecord,
       ...userDoc.data()
     });
   } catch (error) {
-    console.error('Error fetching user:', error);
+    console.error('Error fetching dashboard data:', error);
     res.status(400).json({ error: error.message });
   }
 });
