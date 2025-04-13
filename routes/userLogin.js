@@ -314,4 +314,43 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// Add verify token endpoint
+router.get('/verify-token', authenticateJWT, async (req, res) => {
+  try {
+    const { uid } = req.user;
+    
+    // Verify the user exists in Firebase Auth
+    const userRecord = await auth.getUser(uid);
+    
+    // Get user document from Firestore for additional data
+    const userDoc = await db.collection('users').doc(uid).get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User profile not found' });
+    }
+
+    // Combine Firebase Auth and Firestore data
+    const userData = {
+      ...userRecord,
+      ...userDoc.data()
+    };
+
+    res.json({
+      uid: userData.uid,
+      email: userData.email,
+      displayName: userData.displayName,
+      emailVerified: userData.emailVerified,
+      membershipStatus: userData.membershipStatus,
+      lastLoginAt: userData.lastLoginAt,
+      createdAt: userData.createdAt
+    });
+  } catch (error) {
+    console.error('Token verification failed:', error);
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 export default router;
