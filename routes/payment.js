@@ -3,6 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import fetch from 'node-fetch';
 import { jwtVerify } from 'jose';
 import crypto from 'crypto';
+import { verifyReferralCode } from '../helpers/referralCodes.js';
 
 const router = express.Router();
 const db = getFirestore();
@@ -60,8 +61,22 @@ router.get('/history', authenticateJWT, async (req, res) => {
 // Create order
 router.post('/orders', authenticateJWT, async (req, res) => {
   try {
-    const { planType } = req.body;
-    const amount = planType === 'annual' ? 180 : 500;
+    const { planType, referralCode } = req.body;
+    const userId = req.user.uid;
+
+    if (!planType) {
+      return res.status(400).json({ error: 'Plan type is required' });
+    }
+
+    // Calculate the amount based on plan type and referral code
+    let amount = planType === 'basicPlan' ? 1800 : 5000;
+    
+    if (referralCode) {
+      const verificationResult = verifyReferralCode(referralCode, planType);
+      if (verificationResult.isValid) {
+        amount = verificationResult.amountToPay;
+      }
+    }
 
     // Create internal order
     const orderRef = await db.collection('orders').add({
@@ -70,7 +85,8 @@ router.post('/orders', authenticateJWT, async (req, res) => {
       amount,
       currency: 'INR',
       status: 'pending',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      referralCode: referralCode || null
     });
 
     // Create Razorpay order
@@ -81,13 +97,14 @@ router.post('/orders', authenticateJWT, async (req, res) => {
         'Authorization': `Basic ${Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64')}`
       },
       body: JSON.stringify({
-        amount,
+        amount: amount * 100, // Convert to paise
         currency: 'INR',
         receipt: orderRef.id,
         notes: {
           planType,
           userId: req.user.uid,
-          orderId: orderRef.id
+          orderId: orderRef.id,
+          referralCode: referralCode || null
         }
       })
     });
@@ -242,6 +259,44 @@ router.get('/user-orders', authenticateJWT, async (req, res) => {
   } catch (error) {
     console.error('Error fetching user orders:', error);
     res.status(400).json({ error: error.message });
+  }
+});
+
+// Verify referral code
+router.post('/verify-referral', authenticateJWT, async (req, res) => {
+  try {
+    const { code, planType } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Referral code is required' });
+    }
+
+    if (!planType) {
+      return res.status(400).json({ error: 'Plan type is required' });
+    }
+
+    const verificationResult = verifyReferralCode(code, planType);
+    
+    if (!verificationResult.isValid) {
+      return res.status(400).json({ error: verificationResult.error });
+    }
+
+    // Calculate the amount to be paid
+    const originalAmount = planType === 'basicPlan' ? 1800 : 5000;
+    const discountAmount = (originalAmount * verificationResult.discountPercent) / 100;
+    const amountToPay = originalAmount - discountAmount;
+
+    res.json({
+      isValid: verificationResult.isValid,
+      discountPercent: verificationResult.discountPercent,
+      amountToPay: amountToPay,
+      acceptedPlans: verificationResult.acceptedPlans,
+      planType: verificationResult.planType,
+      expiryDate: verificationResult.expiryDate
+    });
+  } catch (error) {
+    console.error('Error verifying referral code:', error);
+    res.status(500).json({ error: 'Failed to verify referral code' });
   }
 });
 
