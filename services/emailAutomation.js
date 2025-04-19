@@ -18,27 +18,37 @@ const transporter = nodemailer.createTransport({
 });
 
 // Function to send welcome email after signup
-export const sendWelcomeEmail = async (email, displayName) => {
-  try {
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Welcome to NoDevBuild!',
-      html: `
-        <h1>Welcome to NoDevBuild, ${displayName || 'there'}!</h1>
-        <p>Thank you for joining NoDevBuild. We're excited to have you on board!</p>
-        <p>With NoDevBuild, you can:</p>
-        <ul>
-          <li>Convert text to different cases</li>
-          <li>Analyze text statistics</li>
-          <li>And much more!</li>
-        </ul>
-        <p>If you have any questions, feel free to reach out to our support team.</p>
+export const sendWelcomeEmail = async (email, displayName, verificationLink) => {
+  const msg = {
+    to: email,
+    from: 'support@nodevbuild.com',
+    subject: 'Welcome to NoDevBuild!',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Welcome to NoDevBuild, ${displayName}!</h2>
+        <p>Thank you for joining our community. We're excited to have you on board!</p>
+        
+        <p>To get started, please verify your email address by clicking the button below:</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${verificationLink}" 
+             style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+            Verify Email Address
+          </a>
+        </div>
+        
+        <p>If the button above doesn't work, you can also copy and paste this link into your browser:</p>
+        <p style="word-break: break-all;">${verificationLink}</p>
+        
+        <p>This link will expire in 24 hours for security reasons.</p>
+        
         <p>Best regards,<br>The NoDevBuild Team</p>
-      `
-    };
+      </div>
+    `
+  };
 
-    await transporter.sendMail(mailOptions);
+  try {
+    await transporter.sendMail(msg);
     console.log('Welcome email sent successfully');
   } catch (error) {
     console.error('Error sending welcome email:', error);
@@ -67,6 +77,47 @@ export const sendLoginNotification = async (email, displayName) => {
     console.log('Login notification email sent successfully');
   } catch (error) {
     console.error('Error sending login notification:', error);
+    throw error;
+  }
+};
+
+export const sendResetPasswordLinkEmail = async (email, displayName, resetLink) => {
+  const msg = {
+    to: email,
+    from: 'support@nodevbuild.com',
+    subject: 'Reset Your NoDevBuild Password',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Hi ${displayName || 'there'},</h2>
+        
+        <p>We received a request to reset your password for your NoDevBuild account.</p>
+        
+        <p>To reset your password, click the button below:</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetLink}" 
+             style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+            Reset Password
+          </a>
+        </div>
+        
+        <p>If the button above doesn't work, you can also copy and paste this link into your browser:</p>
+        <p style="word-break: break-all;">${resetLink}</p>
+        
+        <p>This link will expire in 1 hour for security reasons.</p>
+        
+        <p>If you didn't request this password reset, you can safely ignore this email.</p>
+        
+        <p>Best regards,<br>The NoDevBuild Team</p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(msg);
+    console.log('Password reset email sent successfully');
+  } catch (error) {
+    console.error('Error sending password reset email:', error);
     throw error;
   }
 };

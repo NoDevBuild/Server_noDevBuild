@@ -6,12 +6,16 @@ import { promisify } from 'util';
 import validator from 'email-validator';
 import dns from 'dns';
 import { jwtVerify } from 'jose';
-import { sendWelcomeEmail, sendLoginNotification } from '../services/emailAutomation.js';
+import { sendWelcomeEmail, sendLoginNotification, sendResetPasswordLinkEmail } from '../services/emailAutomation.js';
 import { authenticateUser, createUser, updateUser, deleteUser, getUserProfile } from '../services/authService.js';
+import dotenv from 'dotenv';
 
 const router = express.Router();
 const auth = getAuth();
 const db = getFirestore();
+
+// Load environment variables
+dotenv.config();
 
 const resolveMx = promisify(dns.resolveMx);
 
@@ -169,8 +173,13 @@ router.post('/signup', async (req, res) => {
     try {
       const result = await createUser(email, password, displayName);
       
+      const verificationLink = await auth.generateEmailVerificationLink(email, {
+        url: 'https://nodevbuild.com/verify-email'
+      });
       // Send welcome email
-      // await sendWelcomeEmail(email, displayName);
+      await sendWelcomeEmail(email, displayName, verificationLink);
+
+      // Generate email verification link
 
       res.status(201).json({
         ...result,
@@ -297,20 +306,45 @@ router.get('/dashboard/:userId', authenticateJWT, async (req, res) => {
   }
 });
 
-// Reset password
+// Reset password route
 router.post('/reset-password', async (req, res) => {
   try {
     const { email } = req.body;
     
-    // Generate password reset link
-    const link = await auth.generatePasswordResetLink(email);
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Get user record to get display name
+    const userRecord = await auth.getUserByEmail(email);
     
-    // Here you would typically send this link via email
-    // For now, we'll just return it
-    res.json({ link });
+    // Generate password reset link
+    const resetLink = await auth.generatePasswordResetLink(email, {
+      url: 'https://nodevbuild.com/login'
+    });
+
+    // Send reset password email
+    await sendResetPasswordLinkEmail(email, userRecord.displayName, resetLink);
+        
+    res.json({ 
+      message: 'Password reset link has been sent to your email',
+      success: true
+    });
   } catch (error) {
     console.error('Error generating password reset link:', error);
-    res.status(400).json({ error: error.message });
+    
+    // Handle specific Firebase errors
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({ 
+        error: 'No account found with this email address',
+        code: 'auth/user-not-found'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to send reset link',
+      details: error.message 
+    });
   }
 });
 
